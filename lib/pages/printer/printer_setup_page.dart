@@ -25,6 +25,27 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
     setState(() => _isScanning = false);
   }
 
+  Future<void> _checkConnectionStatus() async {
+    try {
+      bool isConnected = await _printerService.checkPrinterConnection();
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isConnected
+                ? 'Printer terhubung dan siap digunakan'
+                : 'Printer tidak terhubung',
+          ),
+          backgroundColor: isConnected ? Colors.green : Colors.red,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error checking connection: $e')));
+    }
+  }
+
   Future<void> _connectPrinter(String address) async {
     try {
       final success = await _printerService.connectToDevice(address);
@@ -73,7 +94,16 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Setup Printer')),
+      appBar: AppBar(
+        title: const Text('Setup Printer'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _checkConnectionStatus,
+            tooltip: 'Periksa Status Koneksi',
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:kasir/providers/cart_provider.dart';
+import 'package:kasir/services/printer_service.dart';
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -31,6 +32,64 @@ class _CheckoutPageState extends State<CheckoutPage> {
     super.dispose();
   }
 
+  Future<bool> _printReceiptWithConnectionCheck(
+    Map<String, dynamic> receiptData,
+    BuildContext context,
+  ) async {
+    final printerService = PrinterService();
+
+    // Step 1: Check printer connection
+    bool isConnected = await printerService.checkPrinterConnection();
+
+    if (!isConnected) {
+      // Step 2: Show reconnect dialog if not connected
+      if (mounted) {
+        final shouldReconnect =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                title: const Text('Printer Tidak Terhubung'),
+                content: const Text(
+                  'Printer tidak terhubung. Apakah Anda ingin mencoba menghubungkan ulang?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Lewati'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Hubungkan Ulang'),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+        if (shouldReconnect) {
+          // Navigate to printer setup page
+          if (mounted) {
+            Navigator.of(context).pushNamed('/printer-setup');
+          }
+          return false; // Don't proceed with printing
+        } else {
+          return false; // User chose to skip
+        }
+      }
+      return false;
+    }
+
+    // Step 3: Print receipt if connected
+    try {
+      bool printSuccess = await printerService.printReceipt(receiptData);
+      return printSuccess;
+    } catch (e) {
+      debugPrint('Print error: $e');
+      return false;
+    }
+  }
+
   Future<void> _processPayment() async {
     setState(() => _isProcessing = true);
 
@@ -47,63 +106,101 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ? _customerNameController.text.trim()
           : 'Pelanggan Umum';
 
+      // Prepare receipt data for printing
+      final receiptData = {
+        'store_name': 'Smart Cashier',
+        'store_address': 'Jl. Example No. 123\nJakarta, Indonesia',
+        'invoice_id': invoiceCode,
+        'printed_at': DateTime.now().toString(),
+        'customer_name': customerName,
+        'customer_phone': _customerPhoneController.text.trim(),
+        'items': cart.items
+            .map(
+              (item) => {
+                'name': item.product.name,
+                'qty': item.quantity,
+                'unit_price': item.product.price,
+                'subtotal': item.subtotal,
+              },
+            )
+            .toList(),
+        'subtotal': cart.subtotal,
+        'tax_amount': cart.taxAmount,
+        'final_total': cart.total,
+        'payment_method': _paymentMethods.firstWhere(
+          (m) => m['id'] == _selectedPaymentMethod,
+          orElse: () => {'name': 'Unknown'},
+        )['name'],
+        'paid_amount': cart.total, // Assuming exact payment
+      };
+
+      // Auto-print receipt with connection checking
+      bool printSuccess = await _printReceiptWithConnectionCheck(
+        receiptData,
+        context,
+      );
+
       // Show success dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('Pembayaran Berhasil'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 60),
-              const SizedBox(height: 16),
-              Text(
-                'Invoice: $invoiceCode',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('Pembayaran Berhasil'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 60),
+                const SizedBox(height: 16),
+                Text(
+                  'Invoice: $invoiceCode',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Pelanggan: $customerName',
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Total: Rp ${cart.total.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                const SizedBox(height: 8),
+                Text(
+                  'Pelanggan: $customerName',
+                  style: const TextStyle(fontSize: 14),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Status: Pembayaran diterima',
-                style: const TextStyle(
-                  color: Colors.green,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 8),
+                Text(
+                  'Total: Rp ${cart.total.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  printSuccess
+                      ? '✅ Struk berhasil dicetak'
+                      : '⚠️ Printer tidak terhubung',
+                  style: TextStyle(
+                    color: printSuccess ? Colors.green : Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  cart.clearCart();
+                  context.go('/dashboard');
+                },
+                child: const Text('Selesai'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                cart.clearCart();
-                context.go('/dashboard');
-              },
-              child: const Text('Selesai'),
-            ),
-          ],
-        ),
-      );
+        );
+      }
     }
   }
 

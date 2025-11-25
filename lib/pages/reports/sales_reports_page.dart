@@ -4,11 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:kasir/providers/auth_provider.dart';
 import 'package:kasir/services/auth_service.dart';
+import 'package:kasir/services/printer_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:open_file/open_file.dart';
@@ -196,6 +196,66 @@ class _SalesReportsPageState extends State<SalesReportsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Export Excel akan segera tersedia')),
     );
+  }
+
+  Future<void> _reprintReceipt(Map<String, dynamic> transaction) async {
+    try {
+      // Prepare receipt data for reprinting
+      final receiptData = {
+        'store_name': 'Smart Cashier',
+        'store_address': 'Jl. Example No. 123\nJakarta, Indonesia',
+        'invoice_id': transaction['invoice_code'] ?? 'N/A',
+        'printed_at': DateTime.now().toString(),
+        'customer_name': transaction['customer'] ?? 'Pelanggan Umum',
+        'customer_phone': null, // Not available in transaction data
+        'items': [], // Would need to fetch from API in real implementation
+        'subtotal': transaction['total'] ?? 0,
+        'tax_amount': 0, // Would need to calculate from API data
+        'final_total': transaction['total'] ?? 0,
+        'payment_method': transaction['payment_method'] ?? 'Cash',
+        'paid_amount': transaction['total'] ?? 0,
+      };
+
+      // For demo purposes, add some sample items
+      if (receiptData['items'].isEmpty) {
+        receiptData['items'] = [
+          {
+            'name': 'Item Sample',
+            'qty': 1,
+            'unit_price': transaction['total'] ?? 0,
+            'subtotal': transaction['total'] ?? 0,
+          },
+        ];
+      }
+
+      final printerService = PrinterService();
+      final success = await printerService.printReceipt(receiptData);
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Struk ${transaction['invoice_code']} berhasil dicetak ulang',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gagal mencetak struk. Periksa koneksi printer.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error reprint: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _getPeriodLabel() {
@@ -527,6 +587,7 @@ class _SalesReportsPageState extends State<SalesReportsPage> {
                                   DataColumn(label: Text('Pelanggan')),
                                   DataColumn(label: Text('Total')),
                                   DataColumn(label: Text('Pembayaran')),
+                                  DataColumn(label: Text('Aksi')),
                                 ],
                                 rows:
                                     (_reportData!['recent_transactions']
@@ -554,6 +615,16 @@ class _SalesReportsPageState extends State<SalesReportsPage> {
                                               DataCell(
                                                 Text(
                                                   transaction['payment_method'],
+                                                ),
+                                              ),
+                                              DataCell(
+                                                IconButton(
+                                                  icon: const Icon(Icons.print),
+                                                  onPressed: () =>
+                                                      _reprintReceipt(
+                                                        transaction,
+                                                      ),
+                                                  tooltip: 'Cetak Ulang Struk',
                                                 ),
                                               ),
                                             ],
