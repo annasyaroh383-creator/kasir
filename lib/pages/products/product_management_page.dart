@@ -165,14 +165,22 @@ class _ProductManagementPageState extends State<ProductManagementPage> {
                             height: 50,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
-                              image: DecorationImage(
-                                image: NetworkImage(
-                                  product.imageUrl ??
-                                      'https://via.placeholder.com/50x50/cccccc/666666?text=No+Img',
-                                ),
-                                fit: BoxFit.cover,
-                              ),
+                              color: Colors.grey[200],
                             ),
+                            child:
+                                product.imageUrl != null &&
+                                    product.imageUrl!.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      product.imageUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              _buildPlaceholderIcon(),
+                                    ),
+                                  )
+                                : _buildPlaceholderIcon(),
                           ),
                           title: Text(product.name),
                           subtitle: Column(
@@ -238,5 +246,9 @@ class _ProductManagementPageState extends State<ProductManagementPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return const Icon(Icons.inventory_2, color: Colors.grey, size: 25);
   }
 }

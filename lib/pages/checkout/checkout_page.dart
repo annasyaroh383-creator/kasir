@@ -22,9 +22,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _isProcessing = false;
 
   final List<Map<String, dynamic>> _paymentMethods = [
-    {'id': 'cash', 'name': 'Tunai', 'icon': Icons.money},
+    {'id': 'cash', 'name': 'Tunai', 'icon': Icons.payments},
     {'id': 'qris', 'name': 'QRIS', 'icon': Icons.qr_code},
-    {'id': 'e_money', 'name': 'E-Money', 'icon': Icons.credit_card},
+    {'id': 'e_money', 'name': 'E-Money', 'icon': Icons.account_balance_wallet},
     {'id': 'card', 'name': 'Kartu Kredit/Debit', 'icon': Icons.credit_card},
   ];
 
@@ -106,12 +106,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
         headers: {'Authorization': 'Bearer $token'},
       );
 
+      bool printSuccess = false;
       if (receiptResponse.statusCode == 200) {
         final receiptData = jsonDecode(receiptResponse.body)['data'];
 
-        // Print receipt automatically
+        // Try to print receipt automatically
         final printerService = PrinterService();
-        await printerService.printReceipt(receiptData);
+        printSuccess = await printerService.printReceipt(receiptData);
       }
 
       if (mounted) {
@@ -145,13 +146,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod)['name']}',
+                  'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Struk telah dicetak',
+                Text(
+                  printSuccess
+                      ? 'Struk telah dicetak'
+                      : 'Printer tidak terhubung',
                   style: TextStyle(
-                    color: Colors.green,
+                    color: printSuccess ? Colors.green : Colors.orange,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -298,15 +301,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             (method) => RadioListTile<String>(
                               title: Row(
                                 children: [
-                                  Icon(method['icon'] as IconData),
+                                  Icon(
+                                    method['icon'] as IconData? ??
+                                        Icons.payment,
+                                  ),
                                   const SizedBox(width: 12),
-                                  Text(method['name'] as String),
+                                  Text(method['name'] as String? ?? 'Unknown'),
                                 ],
                               ),
-                              value: method['id'] as String,
+                              value: method['id'] as String? ?? '',
                               groupValue: _selectedPaymentMethod,
                               onChanged: (value) {
-                                setState(() => _selectedPaymentMethod = value!);
+                                if (value != null && value.isNotEmpty) {
+                                  setState(
+                                    () => _selectedPaymentMethod = value,
+                                  );
+                                }
                               },
                             ),
                           ),

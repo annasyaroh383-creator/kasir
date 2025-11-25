@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Carbon;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Payment;
@@ -250,9 +251,9 @@ class SaleController extends Controller
         $date = $request->get('date', today()->toDateString());
 
         $sales = Sale::whereDate('created_at', $date)
-                    ->completed()
-                    ->with(['customer', 'saleItems'])
-                    ->get();
+                     ->completed()
+                     ->with(['customer', 'saleItems'])
+                     ->get();
 
         $report = [
             'date' => $date,
@@ -279,6 +280,115 @@ class SaleController extends Controller
         return response()->json([
             'success' => true,
             'data' => $report,
+        ]);
+    }
+
+    public function getSalesReport(Request $request)
+    {
+        $request->validate([
+            'period' => 'required|in:day,week,month',
+            'date' => 'nullable|date',
+        ]);
+
+        $period = $request->period;
+        $date = $request->date ? Carbon::parse($request->date) : now();
+
+        $query = Sale::completed()->with(['customer', 'user', 'saleItems.product', 'payments']);
+
+        // Filter by period
+        switch ($period) {
+            case 'day':
+                $query->whereDate('created_at', $date->toDateString());
+                $groupBy = 'HOUR(created_at)';
+                $dateFormat = '%H:00';
+                break;
+            case 'week':
+                $startOfWeek = $date->copy()->startOfWeek();
+                $endOfWeek = $date->copy()->endOfWeek();
+                $query->whereBetween('created_at', [$startOfWeek, $endOfWeek]);
+                $groupBy = 'DATE(created_at)';
+                $dateFormat = '%Y-%m-%d';
+                break;
+            case 'month':
+                $query->whereYear('created_at', $date->year)
+                      ->whereMonth('created_at', $date->month);
+                $groupBy = 'DATE(created_at)';
+                $dateFormat = '%Y-%m-%d';
+                break;
+        }
+
+        $sales = $query->get();
+
+        // Chart data
+        $chartData = Sale::selectRaw("
+                DATE_FORMAT(created_at, '$dateFormat') as period,
+                COUNT(*) as sales_count,
+                SUM(final_amount) as revenue,
+                SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_items.sale_id = sales.id)) as items_sold
+            ")
+            ->whereIn('id', $sales->pluck('id'))
+            ->groupBy('period')
+            ->orderBy('period')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'period' => $item->period,
+                    'sales_count' => (int) $item->sales_count,
+                    'revenue' => (float) $item->revenue,
+                    'items_sold' => (int) $item->items_sold,
+                ];
+            });
+
+        // Summary statistics
+        $summary = [
+            'total_sales' => $sales->count(),
+            'total_revenue' => $sales->sum('final_amount'),
+            'total_items_sold' => $sales->sum(function ($sale) {
+                return $sale->saleItems->sum('quantity');
+            }),
+            'average_sale' => $sales->count() > 0 ? $sales->sum('final_amount') / $sales->count() : 0,
+            'payment_methods' => $sales->flatMap->payments->groupBy('method')->map->sum('amount'),
+        ];
+
+        // Top products
+        $topProducts = $sales->flatMap->saleItems
+            ->groupBy('product.name')
+            ->map(function ($items, $productName) {
+                return [
+                    'name' => $productName,
+                    'quantity' => $items->sum('quantity'),
+                    'revenue' => $items->sum('subtotal'),
+                    'transactions' => $items->count(),
+                ];
+            })
+            ->sortByDesc('revenue')
+            ->take(20)
+            ->values();
+
+        // Recent transactions
+        $recentTransactions = $sales->sortByDesc('created_at')->take(50)->map(function ($sale) {
+            return [
+                'id' => $sale->id,
+                'invoice_code' => $sale->invoice_code,
+                'date' => $sale->created_at->format('Y-m-d H:i:s'),
+                'customer' => $sale->customer?->name ?? 'Walk-in Customer',
+                'cashier' => $sale->user->name,
+                'total' => $sale->final_amount,
+                'payment_method' => $sale->payments->first()?->method ?? 'unknown',
+                'items_count' => $sale->saleItems->sum('quantity'),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'period' => $period,
+                'date' => $date->toDateString(),
+                'chart_data' => $chartData,
+                'summary' => $summary,
+                'top_products' => $topProducts,
+                'recent_transactions' => $recentTransactions,
+            ],
         ]);
     }
 }

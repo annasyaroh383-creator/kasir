@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kasir/services/printer_service.dart';
 
 class PrinterSetupPage extends StatefulWidget {
   const PrinterSetupPage({super.key});
@@ -8,32 +9,65 @@ class PrinterSetupPage extends StatefulWidget {
 }
 
 class _PrinterSetupPageState extends State<PrinterSetupPage> {
+  final PrinterService _printerService = PrinterService();
   bool _isScanning = false;
-  String? _connectedPrinter;
-  final List<String> _availablePrinters = [
-    'Thermal Printer BT-001',
-    'POS Printer XP-200',
-    'Receipt Printer RPT-45',
-  ];
+  List<Map<String, dynamic>> _availablePrinters = [];
 
   Future<void> _scanPrinters() async {
     setState(() => _isScanning = true);
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      _availablePrinters = await _printerService.getAvailableDevices();
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error scanning printers: $e')));
+    }
     setState(() => _isScanning = false);
   }
 
-  void _connectPrinter(String printerName) {
-    setState(() => _connectedPrinter = printerName);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Terhubung ke $printerName')));
+  Future<void> _connectPrinter(String address) async {
+    try {
+      final success = await _printerService.connectToDevice(address);
+      if (success) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Terhubung ke ${_printerService.connectedDeviceName}',
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal terhubung ke printer')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error connecting: $e')));
+    }
   }
 
-  void _disconnectPrinter() {
-    setState(() => _connectedPrinter = null);
+  Future<void> _disconnectPrinter() async {
+    await _printerService.disconnect();
+    setState(() {});
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Printer terputus')));
+  }
+
+  Future<void> _testPrint() async {
+    final success = await _printerService.printTest();
+    if (success) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Test print berhasil')));
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Test print gagal')));
+    }
   }
 
   @override
@@ -52,10 +86,10 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
                 child: Row(
                   children: [
                     Icon(
-                      _connectedPrinter != null
+                      _printerService.isConnected
                           ? Icons.bluetooth_connected
                           : Icons.bluetooth_disabled,
-                      color: _connectedPrinter != null
+                      color: _printerService.isConnected
                           ? Colors.green
                           : Colors.red,
                       size: 32,
@@ -66,7 +100,7 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _connectedPrinter != null
+                            _printerService.isConnected
                                 ? 'Terhubung'
                                 : 'Tidak Terhubung',
                             style: const TextStyle(
@@ -75,7 +109,7 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
                             ),
                           ),
                           Text(
-                            _connectedPrinter ??
+                            _printerService.connectedDeviceName ??
                                 'Tidak ada printer yang terhubung',
                             style: TextStyle(color: Colors.grey[600]),
                           ),
@@ -121,20 +155,29 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
 
             Expanded(
               child: _availablePrinters.isEmpty
-                  ? const Center(child: Text('Tidak ada printer ditemukan'))
+                  ? const Center(
+                      child: Text('Tekan "Cari Printer" untuk mencari printer'),
+                    )
                   : ListView.builder(
                       itemCount: _availablePrinters.length,
                       itemBuilder: (context, index) {
                         final printer = _availablePrinters[index];
-                        final isConnected = _connectedPrinter == printer;
+                        final printerName = printer['name'] as String;
+                        final printerAddress = printer['address'] as String;
+                        final isConnected =
+                            _printerService.isConnected &&
+                            _printerService.connectedDeviceName ==
+                                'Thermal Printer ($printerAddress)';
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
                             leading: const Icon(Icons.print),
-                            title: Text(printer),
+                            title: Text(printerName),
                             subtitle: Text(
-                              isConnected ? 'Terhubung' : 'Tersedia',
+                              isConnected
+                                  ? 'Terhubung'
+                                  : 'Tersedia - $printerAddress',
                             ),
                             trailing: isConnected
                                 ? ElevatedButton(
@@ -146,7 +189,8 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
                                     child: const Text('Putus'),
                                   )
                                 : ElevatedButton(
-                                    onPressed: () => _connectPrinter(printer),
+                                    onPressed: () =>
+                                        _connectPrinter(printerAddress),
                                     child: const Text('Hubungkan'),
                                   ),
                           ),
@@ -158,17 +202,11 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
             const SizedBox(height: 16),
 
             // Test Print Button
-            if (_connectedPrinter != null)
+            if (_printerService.isConnected)
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Test print berhasil dikirim'),
-                      ),
-                    );
-                  },
+                  onPressed: _testPrint,
                   icon: const Icon(Icons.print),
                   label: const Text('Test Print'),
                   style: OutlinedButton.styleFrom(

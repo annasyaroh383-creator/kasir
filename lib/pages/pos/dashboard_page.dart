@@ -103,14 +103,25 @@ class _DashboardPageState extends State<DashboardPage> {
                           height: 50,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
-                            image: DecorationImage(
-                              image: NetworkImage(
-                                product.imageUrl ??
-                                    'https://via.placeholder.com/150x150/cccccc/666666?text=No+Image',
-                              ),
-                              fit: BoxFit.cover,
-                            ),
+                            color: Colors.grey[300],
                           ),
+                          child:
+                              product.imageUrl != null &&
+                                  product.imageUrl!.isNotEmpty
+                              ? Image.network(
+                                  product.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return const Icon(
+                                      Icons.inventory_2,
+                                      color: Colors.grey,
+                                    );
+                                  },
+                                )
+                              : const Icon(
+                                  Icons.inventory_2,
+                                  color: Colors.grey,
+                                ),
                         ),
                         title: Text(product.name),
                         subtitle: Text(
@@ -159,6 +170,11 @@ class _DashboardPageState extends State<DashboardPage> {
             icon: const Icon(Icons.recommend),
             onPressed: _showRecommendations,
             tooltip: 'Rekomendasi',
+          ),
+          IconButton(
+            icon: const Icon(Icons.analytics),
+            onPressed: () => context.push('/reports'),
+            tooltip: 'Laporan Penjualan',
           ),
           IconButton(
             icon: const Icon(Icons.print),

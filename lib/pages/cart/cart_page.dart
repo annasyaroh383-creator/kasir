@@ -76,14 +76,22 @@ class CartPage extends StatelessWidget {
                               height: 60,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(8),
-                                image: DecorationImage(
-                                  image: NetworkImage(
-                                    item.product.imageUrl ??
-                                        'https://via.placeholder.com/60x60/cccccc/666666?text=No+Img',
-                                  ),
-                                  fit: BoxFit.cover,
-                                ),
+                                color: Colors.grey[200],
                               ),
+                              child:
+                                  item.product.imageUrl != null &&
+                                      item.product.imageUrl!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        item.product.imageUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                _buildPlaceholderIcon(),
+                                      ),
+                                    )
+                                  : _buildPlaceholderIcon(),
                             ),
                             const SizedBox(width: 16),
 
@@ -207,6 +215,10 @@ class CartPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return const Icon(Icons.inventory_2, color: Colors.grey, size: 30);
   }
 
   Widget _buildTotalRow(String label, double amount, {bool isBold = false}) {

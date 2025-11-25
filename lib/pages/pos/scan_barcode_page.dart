@@ -169,14 +169,21 @@ class _ScanBarcodePageState extends State<ScanBarcodePage> {
                         height: 60,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
-                          image: DecorationImage(
-                            image: NetworkImage(
-                              _foundProduct!.imageUrl ??
-                                  'https://via.placeholder.com/60x60/cccccc/666666?text=No+Img',
-                            ),
-                            fit: BoxFit.cover,
-                          ),
+                          color: Colors.grey[200],
                         ),
+                        child:
+                            _foundProduct!.imageUrl != null &&
+                                _foundProduct!.imageUrl!.isNotEmpty
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  _foundProduct!.imageUrl!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      _buildPlaceholderIcon(),
+                                ),
+                              )
+                            : _buildPlaceholderIcon(),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -232,5 +239,9 @@ class _ScanBarcodePageState extends State<ScanBarcodePage> {
         ),
       ),
     );
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return const Icon(Icons.inventory_2, color: Colors.grey, size: 30);
   }
 }

@@ -64,14 +64,27 @@ class MiniCart extends StatelessWidget {
                                     height: 40,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(8),
-                                      image: DecorationImage(
-                                        image: NetworkImage(
-                                          item.product.imageUrl ??
-                                              'https://via.placeholder.com/40x40/cccccc/666666?text=No+Img',
-                                        ),
-                                        fit: BoxFit.cover,
-                                      ),
+                                      color: Colors.grey[200],
                                     ),
+                                    child:
+                                        item.product.imageUrl != null &&
+                                            item.product.imageUrl!.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image.network(
+                                              item.product.imageUrl!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => _buildPlaceholderIcon(),
+                                            ),
+                                          )
+                                        : _buildPlaceholderIcon(),
                                   ),
                                   const SizedBox(width: 12),
 
@@ -184,6 +197,10 @@ class MiniCart extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return const Icon(Icons.inventory_2, color: Colors.grey, size: 20);
   }
 
   Widget _buildTotalRow(String label, double amount, {bool isBold = false}) {

@@ -6,6 +6,7 @@ import 'package:kasir/pages/cart/cart_page.dart';
 import 'package:kasir/pages/checkout/checkout_page.dart';
 import 'package:kasir/pages/printer/printer_setup_page.dart';
 import 'package:kasir/pages/products/product_management_page.dart';
+import 'package:kasir/pages/reports/sales_reports_page.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -32,6 +33,10 @@ class AppRouter {
       GoRoute(
         path: '/product-management',
         builder: (context, state) => const ProductManagementPage(),
+      ),
+      GoRoute(
+        path: '/reports',
+        builder: (context, state) => const SalesReportsPage(),
       ),
     ],
   );

@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sales/{sale}/payment', [SaleController::class, 'processPayment']);
     Route::get('/sales/{sale}/receipt', [SaleController::class, 'getReceipt']);
     Route::get('/reports/daily', [SaleController::class, 'getDailyReport']);
+    Route::get('/reports/sales', [SaleController::class, 'getSalesReport']);
 
     // AI Recommendations
     Route::get('/recommendations', [RecommendationController::class, 'getRecommendations']);

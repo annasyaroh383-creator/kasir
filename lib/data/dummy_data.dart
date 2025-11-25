@@ -12,8 +12,7 @@ class DummyData {
       stockQuantity: 50,
       minStockLevel: 10,
       description: 'Indomie Goreng Original',
-      imageUrl:
-          'https://via.placeholder.com/150x150/FF6B6B/FFFFFF?text=Indomie',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -28,8 +27,7 @@ class DummyData {
       stockQuantity: 30,
       minStockLevel: 5,
       description: 'Coca Cola Botol 600ml',
-      imageUrl:
-          'https://via.placeholder.com/150x150/FF8E53/FFFFFF?text=Coca+Cola',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -44,8 +42,7 @@ class DummyData {
       stockQuantity: 15,
       minStockLevel: 3,
       description: 'Beras Ramos Premium 5kg',
-      imageUrl:
-          'https://via.placeholder.com/150x150/4ECDC4/FFFFFF?text=Beras+Ramos',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -60,8 +57,7 @@ class DummyData {
       stockQuantity: 25,
       minStockLevel: 5,
       description: 'Susu Ultra Milk Full Cream 1L',
-      imageUrl:
-          'https://via.placeholder.com/150x150/45B7D1/FFFFFF?text=Ultra+Milk',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -76,8 +72,7 @@ class DummyData {
       stockQuantity: 20,
       minStockLevel: 4,
       description: 'Roti Tawar Sari Roti 400g',
-      imageUrl:
-          'https://via.placeholder.com/150x150/F7DC6F/000000?text=Roti+Tawar',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -92,8 +87,7 @@ class DummyData {
       stockQuantity: 12,
       minStockLevel: 3,
       description: 'Telur Ayam Kampung 1kg (±12 butir)',
-      imageUrl:
-          'https://via.placeholder.com/150x150/F8C471/000000?text=Telur+Ayam',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -108,8 +102,7 @@ class DummyData {
       stockQuantity: 18,
       minStockLevel: 4,
       description: 'Minyak Goreng Bimoli 2L',
-      imageUrl:
-          'https://via.placeholder.com/150x150/85C1E9/FFFFFF?text=Minyak+Goreng',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -124,8 +117,7 @@ class DummyData {
       stockQuantity: 22,
       minStockLevel: 5,
       description: 'Gula Pasir Gulaku 1kg',
-      imageUrl:
-          'https://via.placeholder.com/150x150/E8DAEF/000000?text=Gula+Pasir',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -140,8 +132,7 @@ class DummyData {
       stockQuantity: 35,
       minStockLevel: 8,
       description: 'Kopi Kapal Api Special Mix 200g',
-      imageUrl:
-          'https://via.placeholder.com/150x150/8E44AD/FFFFFF?text=Kopi+Kapal+Api',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -156,8 +147,7 @@ class DummyData {
       stockQuantity: 40,
       minStockLevel: 10,
       description: 'Sabun Mandi Lifebuoy Cool Fresh 75g',
-      imageUrl:
-          'https://via.placeholder.com/150x150/16A085/FFFFFF?text=Lifebuoy',
+      imageUrl: null,
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
