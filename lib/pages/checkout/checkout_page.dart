@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:kasir/providers/cart_provider.dart';
+import 'package:kasir/services/auth_service.dart';
+import 'package:kasir/services/printer_service.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -34,48 +38,148 @@ class _CheckoutPageState extends State<CheckoutPage> {
   Future<void> _processPayment() async {
     setState(() => _isProcessing = true);
 
-    // Simulate payment processing
-    await Future.delayed(const Duration(seconds: 3));
+    try {
+      final cart = context.read<CartProvider>();
+      final token = await AuthService.getToken();
 
-    if (mounted) {
-      setState(() => _isProcessing = false);
+      if (token == null) {
+        throw Exception('Authentication required');
+      }
 
-      // Show success dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('Pembayaran Berhasil'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 60),
-              const SizedBox(height: 16),
-              Text(
-                'Total: Rp ${context.read<CartProvider>().total.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+      // Prepare sale data
+      final saleData = {
+        'customer_id': _customerNameController.text.isNotEmpty
+            ? null
+            : null, // TODO: Create customer if needed
+        'items': cart.items
+            .map(
+              (item) => {
+                'product_id': item.product.id,
+                'quantity': item.quantity,
+                'unit_price': item.product.price,
+                'discount': 0, // TODO: Add discount logic
+              },
+            )
+            .toList(),
+        'discount_amount': 0, // TODO: Add discount logic
+        'tax_amount': cart.taxAmount,
+        'notes': 'POS Transaction',
+      };
+
+      // Create sale via API
+      final response = await http.post(
+        Uri.parse('${AuthService.baseUrl}/sales'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(saleData),
+      );
+
+      if (response.statusCode != 201) {
+        throw Exception('Failed to create sale: ${response.body}');
+      }
+
+      final saleResponse = jsonDecode(response.body);
+      final saleId = saleResponse['data']['id'];
+
+      // Process payment
+      final paymentResponse = await http.post(
+        Uri.parse('${AuthService.baseUrl}/sales/$saleId/payment'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'method': _selectedPaymentMethod,
+          'amount': cart.total,
+        }),
+      );
+
+      if (paymentResponse.statusCode != 200) {
+        throw Exception('Payment failed: ${paymentResponse.body}');
+      }
+
+      // Get receipt data
+      final receiptResponse = await http.get(
+        Uri.parse('${AuthService.baseUrl}/sales/$saleId/receipt'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (receiptResponse.statusCode == 200) {
+        final receiptData = jsonDecode(receiptResponse.body)['data'];
+
+        // Print receipt automatically
+        final printerService = PrinterService();
+        await printerService.printReceipt(receiptData);
+      }
+
+      if (mounted) {
+        setState(() => _isProcessing = false);
+
+        // Show success dialog
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('Pembayaran Berhasil'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 60),
+                const SizedBox(height: 16),
+                Text(
+                  'Invoice: ${saleResponse['data']['invoice_code'] ?? 'N/A'}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod)['name']}',
+                const SizedBox(height: 8),
+                Text(
+                  'Total: Rp ${cart.total.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod)['name']}',
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Struk telah dicetak',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  cart.clearCart();
+                  context.go('/dashboard');
+                },
+                child: const Text('Selesai'),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.read<CartProvider>().clearCart();
-                context.go('/dashboard');
-              },
-              child: const Text('Selesai'),
-            ),
-          ],
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

@@ -68,6 +68,9 @@ dependencies:
   # Webview for payment integrations
   webview_flutter: ^4.8.0
 
+  # Image picker for product images
+  image_picker: ^1.1.2
+
   # Navigation
   go_router: ^14.2.0
 
