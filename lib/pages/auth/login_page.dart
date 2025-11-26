@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:kasir/themes/app_theme.dart';
+import 'package:kasir/providers/auth_provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -28,13 +30,23 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
 
-    // Simulate login delay
-    await Future.delayed(const Duration(seconds: 2));
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
 
-    // For demo purposes, accept any email/password
-    if (mounted) {
-      setState(() => _isLoading = false);
+    setState(() => _isLoading = false);
+
+    if (success && mounted) {
       context.go('/dashboard');
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login failed. Please check your credentials.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -231,9 +243,9 @@ class _LoginPageState extends State<LoginPage> {
 
                           const SizedBox(height: 16),
 
-                          // Demo credentials hint
+                          // Backend connection hint
                           Text(
-                            'Demo: Use any email and password (min 6 chars)',
+                            'Connect to Laravel backend at http://localhost:8000',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: Colors.grey[500]),
                             textAlign: TextAlign.center,

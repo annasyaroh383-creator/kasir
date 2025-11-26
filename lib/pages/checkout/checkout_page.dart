@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:kasir/providers/cart_provider.dart';
 import 'package:kasir/services/printer_service.dart';
+import 'package:kasir/services/payment_service.dart';
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -91,115 +92,223 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _processPayment() async {
+    // Check if payment method requires QR
+    final isQrPayment =
+        _selectedPaymentMethod == 'qris' || _selectedPaymentMethod == 'e_money';
+
+    if (isQrPayment) {
+      // Handle QR payment
+      await _initiateQrPayment();
+    } else {
+      // Handle cash/card payment directly
+      await _processDirectPayment();
+    }
+  }
+
+  Future<void> _initiateQrPayment() async {
     setState(() => _isProcessing = true);
 
-    // Simulate payment processing delay
-    await Future.delayed(const Duration(seconds: 2));
-
-    if (mounted) {
+    try {
       final cart = context.read<CartProvider>();
-      setState(() => _isProcessing = false);
 
-      // Generate mock invoice data
-      final invoiceCode = 'INV-${DateTime.now().millisecondsSinceEpoch}';
-      final customerName = _customerNameController.text.trim().isNotEmpty
-          ? _customerNameController.text.trim()
-          : 'Pelanggan Umum';
+      // Generate invoice ID
+      final invoiceId = 'INV-${DateTime.now().millisecondsSinceEpoch}';
 
-      // Prepare receipt data for printing
-      final receiptData = {
-        'store_name': 'Smart Cashier',
-        'store_address': 'Jl. Example No. 123\nJakarta, Indonesia',
-        'invoice_id': invoiceCode,
-        'printed_at': DateTime.now().toString(),
-        'customer_name': customerName,
-        'customer_phone': _customerPhoneController.text.trim(),
-        'items': cart.items
-            .map(
-              (item) => {
-                'name': item.product.name,
-                'qty': item.quantity,
-                'unit_price': item.product.price,
-                'subtotal': item.subtotal,
-              },
-            )
-            .toList(),
-        'subtotal': cart.subtotal,
-        'tax_amount': cart.taxAmount,
-        'final_total': cart.total,
-        'payment_method': _paymentMethods.firstWhere(
-          (m) => m['id'] == _selectedPaymentMethod,
-          orElse: () => {'name': 'Unknown'},
-        )['name'],
-        'paid_amount': cart.total, // Assuming exact payment
-      };
-
-      // Auto-print receipt with connection checking
-      bool printSuccess = await _printReceiptWithConnectionCheck(
-        receiptData,
-        context,
+      // Initiate QR payment
+      final qrResult = await PaymentService.initiateQrPayment(
+        method: _selectedPaymentMethod,
+        amount: cart.total,
+        invoiceId: invoiceId,
       );
 
-      // Show success dialog
+      setState(() => _isProcessing = false);
+
+      if (qrResult['success'] && mounted) {
+        // Navigate to QR payment screen
+        context.push(
+          '/qr-payment',
+          extra: {
+            'paymentMethod': _paymentMethods.firstWhere(
+              (m) => m['id'] == _selectedPaymentMethod,
+              orElse: () => {'name': 'Unknown'},
+            )['name'],
+            'qrString': qrResult['qr_string'],
+            'totalAmount': cart.total,
+            'invoiceId': invoiceId,
+            'paymentToken': qrResult['payment_token'],
+          },
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                qrResult['message'] ?? 'Failed to initiate QR payment',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
       if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Pembayaran Berhasil'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.check_circle, color: Colors.green, size: 60),
-                const SizedBox(height: 16),
-                Text(
-                  'Invoice: $invoiceCode',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error initiating QR payment: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _processDirectPayment() async {
+    setState(() => _isProcessing = true);
+
+    try {
+      final cart = context.read<CartProvider>();
+
+      // Prepare items data for API
+      final items = cart.items
+          .map(
+            (item) => {
+              'product_id': item.product.id,
+              'quantity': item.quantity,
+              'unit_price': item.product.price,
+              'discount': 0, // Could be extended to include discounts
+            },
+          )
+          .toList();
+
+      // Process payment via API
+      final result = await PaymentService.processDirectPayment(
+        items: items,
+        method: _selectedPaymentMethod,
+        amount: cart.total,
+        customerName: _customerNameController.text.trim().isNotEmpty
+            ? _customerNameController.text.trim()
+            : null,
+        customerPhone: _customerPhoneController.text.trim().isNotEmpty
+            ? _customerPhoneController.text.trim()
+            : null,
+      );
+
+      setState(() => _isProcessing = false);
+
+      if (result['success']) {
+        final saleData = result['data'];
+        final invoiceCode =
+            saleData['invoice_code'] ??
+            'INV-${DateTime.now().millisecondsSinceEpoch}';
+        final customerName = _customerNameController.text.trim().isNotEmpty
+            ? _customerNameController.text.trim()
+            : 'Pelanggan Umum';
+
+        // Prepare receipt data for printing
+        final receiptData = {
+          'store_name': 'Smart Cashier',
+          'store_address': 'Jl. Example No. 123\nJakarta, Indonesia',
+          'invoice_id': invoiceCode,
+          'printed_at': DateTime.now().toString(),
+          'customer_name': customerName,
+          'customer_phone': _customerPhoneController.text.trim(),
+          'items': cart.items
+              .map(
+                (item) => {
+                  'name': item.product.name,
+                  'qty': item.quantity,
+                  'unit_price': item.product.price,
+                  'subtotal': item.subtotal,
+                },
+              )
+              .toList(),
+          'subtotal': cart.subtotal,
+          'tax_amount': cart.taxAmount,
+          'final_total': cart.total,
+          'payment_method': _paymentMethods.firstWhere(
+            (m) => m['id'] == _selectedPaymentMethod,
+            orElse: () => {'name': 'Unknown'},
+          )['name'],
+          'paid_amount': cart.total,
+        };
+
+        // Auto-print receipt with connection checking
+        bool printSuccess = await _printReceiptWithConnectionCheck(
+          receiptData,
+          context,
+        );
+
+        // Show success dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Pembayaran Berhasil'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 60),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Invoice: $invoiceCode',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Pelanggan: $customerName',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Total: Rp ${cart.total.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pelanggan: $customerName',
+                    style: const TextStyle(fontSize: 14),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  printSuccess
-                      ? '✅ Struk berhasil dicetak'
-                      : '⚠️ Printer tidak terhubung',
-                  style: TextStyle(
-                    color: printSuccess ? Colors.green : Colors.orange,
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total: Rp ${cart.total.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    printSuccess
+                        ? '✅ Struk berhasil dicetak'
+                        : '⚠️ Printer tidak terhubung',
+                    style: TextStyle(
+                      color: printSuccess ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    cart.clearCart();
+                    context.go('/dashboard');
+                  },
+                  child: const Text('Selesai'),
                 ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  cart.clearCart();
-                  context.go('/dashboard');
-                },
-                child: const Text('Selesai'),
-              ),
-            ],
-          ),
-        );
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Payment failed')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Payment error: $e')));
       }
     }
   }

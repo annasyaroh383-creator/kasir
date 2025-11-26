@@ -45,7 +45,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'SmartSISAPA - Smart Cashier',
+      title: 'SmartCashier - CashierSisapa',
       theme: AppTheme.posTheme, // Optimized theme for POS
       themeMode: ThemeMode.light, // POS systems use light theme
       routerConfig: AppRouter.router,

@@ -47,6 +47,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/daily', [SaleController::class, 'getDailyReport']);
     Route::get('/reports/sales', [SaleController::class, 'getSalesReport']);
 
+    // Payments
+    Route::post('/payments/direct', [SaleController::class, 'processDirectPayment']);
+    Route::post('/payments/initiate-qr', [SaleController::class, 'initiateQrPayment']);
+    Route::get('/payments/status', [SaleController::class, 'checkPaymentStatus']);
+    Route::post('/payments/process', [SaleController::class, 'processQrPayment']);
+    Route::post('/payments/validate-token', [SaleController::class, 'validatePaymentToken']);
+
     // AI Recommendations
     Route::get('/recommendations', [RecommendationController::class, 'getRecommendations']);
     Route::post('/recommendations/generate', [RecommendationController::class, 'generateRecommendations']);

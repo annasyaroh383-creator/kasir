@@ -11,6 +11,37 @@ class AuthService {
     String password,
   ) async {
     try {
+      // TEMPORARY: Mock authentication for testing without backend
+      // Remove this when Laravel backend is running
+      if (email.isNotEmpty && password.length >= 6) {
+        // Simulate successful login
+        final mockToken =
+            'mock_token_' + DateTime.now().millisecondsSinceEpoch.toString();
+        final mockUser = {
+          'id': 1,
+          'name': 'Test Admin',
+          'email': email,
+          'role': 'admin',
+        };
+
+        // Save token to shared preferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', mockToken);
+        await prefs.setString('user', jsonEncode(mockUser));
+
+        print(
+          'DEBUG: Mock login successful - Token saved: ${mockToken.substring(0, 20)}...',
+        );
+        print(
+          'DEBUG: Mock login successful - User saved: ${mockUser['email']}',
+        );
+
+        return {'success': true, 'token': mockToken, 'user': mockUser};
+      }
+
+      return {'success': false, 'message': 'Invalid credentials'};
+
+      /* ORIGINAL BACKEND CODE - Uncomment when PHP/Laravel is installed
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
         headers: {'Content-Type': 'application/json'},
@@ -25,6 +56,13 @@ class AuthService {
           await prefs.setString('token', data['token']);
           await prefs.setString('user', jsonEncode(data['user']));
 
+          print(
+            'DEBUG: Login successful - Token saved: ${data['token'] != null ? "Token exists (${data['token'].length} chars)" : "NULL"}',
+          );
+          print(
+            'DEBUG: Login successful - User saved: ${data['user'] != null ? data['user']['email'] : "NULL"}',
+          );
+
           return {
             'success': true,
             'token': data['token'],
@@ -34,6 +72,7 @@ class AuthService {
       }
 
       return {'success': false, 'message': 'Login failed'};
+      */
     } catch (e) {
       return {'success': false, 'message': e.toString()};
     }
@@ -53,7 +92,11 @@ class AuthService {
 
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
+    final token = prefs.getString('token');
+    print(
+      'DEBUG: getToken() - Token from SharedPreferences: ${token != null ? "Token exists (${token.length} chars)" : "NULL"}',
+    );
+    return token;
   }
 
   static Future<Map<String, dynamic>?> getUser() async {
