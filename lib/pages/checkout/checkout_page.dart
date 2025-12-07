@@ -1,0 +1,514 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:kasir/providers/cart_provider.dart';
+import 'package:kasir/services/printer_service.dart';
+import 'package:kasir/services/payment_service.dart';
+
+class CheckoutPage extends StatefulWidget {
+  const CheckoutPage({super.key});
+
+  @override
+  State<CheckoutPage> createState() => _CheckoutPageState();
+}
+
+class _CheckoutPageState extends State<CheckoutPage> {
+  String _selectedPaymentMethod = 'cash';
+  final TextEditingController _customerNameController = TextEditingController();
+  final TextEditingController _customerPhoneController =
+      TextEditingController();
+  bool _isProcessing = false;
+
+  final List<Map<String, dynamic>> _paymentMethods = [
+    {'id': 'cash', 'name': 'Tunai', 'icon': Icons.payments},
+    {'id': 'qris', 'name': 'QRIS', 'icon': Icons.qr_code},
+    {'id': 'e_money', 'name': 'E-Money', 'icon': Icons.account_balance_wallet},
+    {'id': 'card', 'name': 'Kartu Kredit/Debit', 'icon': Icons.credit_card},
+  ];
+
+  @override
+  void dispose() {
+    _customerNameController.dispose();
+    _customerPhoneController.dispose();
+    super.dispose();
+  }
+
+  Future<bool> _printReceiptWithConnectionCheck(
+    Map<String, dynamic> receiptData,
+    BuildContext context,
+  ) async {
+    final printerService = PrinterService();
+
+    // Step 1: Check printer connection
+    bool isConnected = await printerService.checkPrinterConnection();
+
+    if (!isConnected) {
+      // Step 2: Show reconnect dialog if not connected
+      if (mounted) {
+        final shouldReconnect =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                title: const Text('Printer Tidak Terhubung'),
+                content: const Text(
+                  'Printer tidak terhubung. Apakah Anda ingin mencoba menghubungkan ulang?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Lewati'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Hubungkan Ulang'),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+        if (shouldReconnect) {
+          // Navigate to printer setup page
+          if (mounted) {
+            Navigator.of(context).pushNamed('/printer-setup');
+          }
+          return false; // Don't proceed with printing
+        } else {
+          return false; // User chose to skip
+        }
+      }
+      return false;
+    }
+
+    // Step 3: Print receipt if connected
+    try {
+      bool printSuccess = await printerService.printReceipt(receiptData);
+      return printSuccess;
+    } catch (e) {
+      debugPrint('Print error: $e');
+      return false;
+    }
+  }
+
+  Future<void> _processPayment() async {
+    // Check if payment method requires QR
+    final isQrPayment =
+        _selectedPaymentMethod == 'qris' || _selectedPaymentMethod == 'e_money';
+
+    if (isQrPayment) {
+      // Handle QR payment
+      await _initiateQrPayment();
+    } else {
+      // Handle cash/card payment directly
+      await _processDirectPayment();
+    }
+  }
+
+  Future<void> _initiateQrPayment() async {
+    setState(() => _isProcessing = true);
+
+    try {
+      final cart = context.read<CartProvider>();
+
+      // Generate invoice ID
+      final invoiceId = 'INV-${DateTime.now().millisecondsSinceEpoch}';
+
+      // Initiate QR payment
+      final qrResult = await PaymentService.initiateQrPayment(
+        method: _selectedPaymentMethod,
+        amount: cart.total,
+        invoiceId: invoiceId,
+      );
+
+      setState(() => _isProcessing = false);
+
+      if (qrResult['success'] && mounted) {
+        // Navigate to QR payment screen
+        context.push(
+          '/qr-payment',
+          extra: {
+            'paymentMethod': _paymentMethods.firstWhere(
+              (m) => m['id'] == _selectedPaymentMethod,
+              orElse: () => {'name': 'Unknown'},
+            )['name'],
+            'qrString': qrResult['qr_string'],
+            'totalAmount': cart.total,
+            'invoiceId': invoiceId,
+            'paymentToken': qrResult['payment_token'],
+          },
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                qrResult['message'] ?? 'Failed to initiate QR payment',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error initiating QR payment: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _processDirectPayment() async {
+    setState(() => _isProcessing = true);
+
+    try {
+      final cart = context.read<CartProvider>();
+
+      // Prepare items data for API
+      final items = cart.items
+          .map(
+            (item) => {
+              'product_id': item.product.id,
+              'quantity': item.quantity,
+              'unit_price': item.product.price,
+              'discount': 0, // Could be extended to include discounts
+            },
+          )
+          .toList();
+
+      // Process payment via API
+      final result = await PaymentService.processDirectPayment(
+        items: items,
+        method: _selectedPaymentMethod,
+        amount: cart.total,
+        customerName: _customerNameController.text.trim().isNotEmpty
+            ? _customerNameController.text.trim()
+            : null,
+        customerPhone: _customerPhoneController.text.trim().isNotEmpty
+            ? _customerPhoneController.text.trim()
+            : null,
+      );
+
+      setState(() => _isProcessing = false);
+
+      if (result['success']) {
+        final saleData = result['data'];
+        final invoiceCode =
+            saleData['invoice_code'] ??
+            'INV-${DateTime.now().millisecondsSinceEpoch}';
+        final customerName = _customerNameController.text.trim().isNotEmpty
+            ? _customerNameController.text.trim()
+            : 'Pelanggan Umum';
+
+        // Prepare receipt data for printing
+        final receiptData = {
+          'store_name': 'Smart Cashier',
+          'store_address': 'Jl. Example No. 123\nJakarta, Indonesia',
+          'invoice_id': invoiceCode,
+          'printed_at': DateTime.now().toString(),
+          'customer_name': customerName,
+          'customer_phone': _customerPhoneController.text.trim(),
+          'items': cart.items
+              .map(
+                (item) => {
+                  'name': item.product.name,
+                  'qty': item.quantity,
+                  'unit_price': item.product.price,
+                  'subtotal': item.subtotal,
+                },
+              )
+              .toList(),
+          'subtotal': cart.subtotal,
+          'tax_amount': cart.taxAmount,
+          'final_total': cart.total,
+          'payment_method': _paymentMethods.firstWhere(
+            (m) => m['id'] == _selectedPaymentMethod,
+            orElse: () => {'name': 'Unknown'},
+          )['name'],
+          'paid_amount': cart.total,
+        };
+
+        // Auto-print receipt with connection checking
+        bool printSuccess = await _printReceiptWithConnectionCheck(
+          receiptData,
+          context,
+        );
+
+        // Show success dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Pembayaran Berhasil'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 60),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Invoice: $invoiceCode',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pelanggan: $customerName',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total: Rp ${cart.total.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Metode: ${_paymentMethods.firstWhere((m) => m['id'] == _selectedPaymentMethod, orElse: () => {'name': 'Unknown'})['name']}',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    printSuccess
+                        ? '✅ Struk berhasil dicetak'
+                        : '⚠️ Printer tidak terhubung',
+                    style: TextStyle(
+                      color: printSuccess ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    cart.clearCart();
+                    context.go('/dashboard');
+                  },
+                  child: const Text('Selesai'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Payment failed')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isProcessing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Payment error: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cart = context.watch<CartProvider>();
+    final isTablet = MediaQuery.of(context).size.width > 600;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Checkout')),
+      body: cart.items.isEmpty
+          ? const Center(child: Text('Keranjang kosong'))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Order Summary
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Ringkasan Pesanan',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ...cart.items.map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${item.product.name} x${item.quantity}',
+                                    ),
+                                  ),
+                                  Text(
+                                    'Rp ${item.subtotal.toStringAsFixed(0)}',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Divider(),
+                          _buildTotalRow('Subtotal', cart.subtotal),
+                          _buildTotalRow('PPN (10%)', cart.taxAmount),
+                          const Divider(),
+                          _buildTotalRow('Total', cart.total, isBold: true),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Customer Information
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Informasi Pelanggan (Opsional)',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _customerNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nama Pelanggan',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _customerPhoneController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nomor Telepon',
+                              border: OutlineInputBorder(),
+                            ),
+                            keyboardType: TextInputType.phone,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Payment Methods
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Metode Pembayaran',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ..._paymentMethods.map(
+                            (method) => RadioListTile<String>(
+                              title: Row(
+                                children: [
+                                  Icon(
+                                    method['icon'] as IconData? ??
+                                        Icons.payment,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(method['name'] as String? ?? 'Unknown'),
+                                ],
+                              ),
+                              value: method['id'] as String? ?? '',
+                              groupValue: _selectedPaymentMethod,
+                              onChanged: (value) {
+                                if (value != null && value.isNotEmpty) {
+                                  setState(
+                                    () => _selectedPaymentMethod = value,
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Process Payment Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _processPayment,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: _isProcessing
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : Text(
+                              'Bayar Rp ${cart.total.toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildTotalRow(String label, double amount, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            'Rp ${amount.toStringAsFixed(0)}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
